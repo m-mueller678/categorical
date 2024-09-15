@@ -24,7 +24,7 @@ impl<P: One> Default for Categorical<(), P> {
 }
 
 impl<T, P: NumAssignRef + NumRef + Clone> Categorical<T, P> {
-    /// Construct a distribution with given categories and probabilities.
+    /// Construct a `Categorical` with given categories and probabilities.
     /// # Panics
     /// Panics if the vectors have different length.
     pub fn new(categories: Vec<T>, probabilities: Vec<P>) -> Self {
@@ -33,6 +33,14 @@ impl<T, P: NumAssignRef + NumRef + Clone> Categorical<T, P> {
             categories,
             probabilities,
         }
+    }
+
+    /// Construct a `Categorical` with same probability for each category.
+    pub fn new_uniform(categories: Vec<T>) -> Self {
+        let probabilities = vec![P::one(); categories.len()];
+        let mut ret = Self::new(categories, probabilities);
+        ret.normalize_in_place();
+        ret
     }
 
     /// Rescale probabilities such that they sum up to 1.
@@ -62,16 +70,32 @@ impl<T, P: NumAssignRef + NumRef + Clone> Categorical<T, P> {
         &self,
         other: &Categorical<U, P>,
         mut f: impl FnMut(&T, &U) -> O,
-    ) {
+    ) -> Categorical<O, P> {
         let mut probabilities =
             Vec::with_capacity(self.probabilities.len() * other.probabilities.len());
-        let mut options = Vec::with_capacity(probabilities.capacity());
+        let mut categories = Vec::with_capacity(probabilities.capacity());
         for (a, pa) in self.iter() {
             for (b, pb) in other.iter() {
                 probabilities.push(pa.clone() * pb);
-                options.push(f(a, b));
+                categories.push(f(a, b));
             }
         }
+        Categorical {
+            probabilities,
+            categories,
+        }
+    }
+
+    /// Returns the probability of x.
+    /// If there are multiple items that compare equal to `x`, the result is unspecified.
+    pub fn probability_of(&self, x: &T) -> P
+    where
+        T: PartialEq,
+    {
+        let Some(i) = self.categories.iter().position(|y| x == y) else {
+            return P::zero();
+        };
+        self.probabilities[i].clone()
     }
 
     /// Like [combine_injective](Self::combine_injective), but combines equal items.
@@ -79,7 +103,7 @@ impl<T, P: NumAssignRef + NumRef + Clone> Categorical<T, P> {
         &self,
         other: &Categorical<U, P>,
         mut f: impl FnMut(&T, &U) -> O,
-    ) {
+    ) -> Categorical<O, P> {
         let mut out = HashMap::new();
         for (a, pa) in self.iter() {
             for (b, pb) in other.iter() {
@@ -93,6 +117,7 @@ impl<T, P: NumAssignRef + NumRef + Clone> Categorical<T, P> {
                 }
             }
         }
+        out.into_iter().collect()
     }
 
     /// Like [combine_injective](Self::combine_injective), but combines equal items.
@@ -101,7 +126,7 @@ impl<T, P: NumAssignRef + NumRef + Clone> Categorical<T, P> {
         &self,
         other: &Categorical<U, P>,
         mut f: impl FnMut(&T, &U) -> O,
-    ) {
+    ) -> Categorical<O, P> {
         let mut out = BTreeMap::new();
         for (a, pa) in self.iter() {
             for (b, pb) in other.iter() {
@@ -115,6 +140,7 @@ impl<T, P: NumAssignRef + NumRef + Clone> Categorical<T, P> {
                 }
             }
         }
+        out.into_iter().collect()
     }
 }
 

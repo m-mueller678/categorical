@@ -134,8 +134,6 @@ impl<T, P> IntoIterator for Categorical<T, P> {
         std::iter::Zip<<Vec<T> as IntoIterator>::IntoIter, <Vec<P> as IntoIterator>::IntoIter>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.categories
-            .into_iter()
-            .zip(self.probabilities.into_iter())
+        self.categories.into_iter().zip(self.probabilities)
     }
 }

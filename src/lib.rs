@@ -1,3 +1,14 @@
+//! ```
+//! use categorical::Categorical;
+//! fn main(){
+//!     let die_roll = Categorical::new_uniform(vec![1,2,3,4,5,6]);
+//!     let max_of_two = die_roll.combine_hash(&die_roll,|&a,&b|a.max(b));
+//!     let double_wins:f64 = max_of_two.combine_hash(&die_roll,|double,single|double>single)
+//!         .probability_of(&true);
+//!     println!("player rolling two dice rolls higher with probability of {double_wins}");
+//! }
+//! ```
+
 use num_traits::{NumAssignRef, NumRef, One};
 use std::collections::{btree_map, hash_map, BTreeMap, HashMap};
 use std::hash::Hash;

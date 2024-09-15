@@ -1,6 +1,12 @@
 [package]
 name = "categorical"
+authors = ["m-mueller678"]
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "combining categorical random distributions and computing exact probabilities"
+repository = "https://github.com/m-mueller678/categorical"
+keywords = ["probability","monadic","math"]
+categories = ["mathematics","simulation"]
 
 [dependencies]

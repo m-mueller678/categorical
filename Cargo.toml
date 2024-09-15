@@ -10,3 +10,4 @@ keywords = ["probability","monadic","math"]
 categories = ["mathematics","simulation"]
 
 [dependencies]
+num-traits = "0.2.19"

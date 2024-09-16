@@ -1,4 +1,3 @@
-#![doc = include_str!("../Readme.md")]
 //! This crate provides a type representing a categorical probability distribution: `Categorical<T,P>`.
 //! A `Categorical` is a collection of objects of type `T`, each associated with a probability of type `P`.
 //! You can combine two `Categoricals` and compute the probability of each combination (assuming the two distributions are sampled independently).

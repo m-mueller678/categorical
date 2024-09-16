@@ -4,7 +4,7 @@
 //!
 //! ```rust
 //! use categorical::{Categorical, CategoricalHash};
-//! let die_roll = CategoricalHash::new_uniform(vec![1, 2, 3, 4, 5, 6].into_iter());
+//! let die_roll = CategoricalHash::new_uniform(1..=6);
 //! // roll two dice and pick the higher number
 //! let max_of_two = CategoricalHash::combined(&die_roll, &die_roll, |&a, &b| a.max(b));
 //! let double_wins: f64 =

@@ -1,167 +1,89 @@
 #![doc = include_str!("../Readme.md")]
+//! This crate provides a type representing a categorical probability distribution: `Categorical<T,P>`.
+//! A `Categorical` is a collection of objects of type `T`, each associated with a probability of type `P`.
+//! You can combine two `Categoricals` and compute the probability of each combination (assuming the two distributions are sampled independently).
+//!
+//! ```rust
+//! use categorical::{Categorical, CategoricalHash};
+//! let die_roll = CategoricalHash::new_uniform(vec![1, 2, 3, 4, 5, 6].into_iter());
+//! // roll two dice and pick the higher number
+//! let max_of_two = CategoricalHash::combined(&die_roll, &die_roll, |&a, &b| a.max(b));
+//! let double_wins: f64 =
+//!     CategoricalHash::combined(&max_of_two, &die_roll, |double, single| double > single)
+//!         .probability_of(&true);
+//! println!("player rolling two dice rolls higher with probability of {double_wins}");
+//! ```
 
-use num_traits::{NumAssignRef, NumRef, One};
-use std::collections::{btree_map, hash_map, BTreeMap, HashMap};
-use std::hash::Hash;
+use num_traits::{NumAssignRef, NumRef};
+
+mod categorical_hash;
+mod categorical_ord;
+mod categorical_vec;
+
+pub use categorical_hash::CategoricalHash;
+pub use categorical_ord::CategoricalOrd;
+pub use categorical_vec::CategoricalVec;
 
 /// Describes a categorical distribution over values of `T`.
 ///
 /// Ideally, the sum of probabilities should be 1, however this is not enforced.
 /// You may use [normalize_in_place](Self::normalize_in_place) to rescale probabilities such that they add up to 1.
-///
-/// It is possible but probably not useful to construct a `Categorical` with duplicate items, that is multiple pairs with the same `T`.
-pub struct Categorical<T, P> {
-    categories: Vec<T>,
-    probabilities: Vec<P>,
-}
-
-impl<P: One> Default for Categorical<(), P> {
-    /// A Categorical with a single category: () with probability 1.
-    fn default() -> Self {
-        Self {
-            categories: vec![()],
-            probabilities: vec![P::one()],
-        }
-    }
-}
-
-impl<T, P: NumAssignRef + NumRef + Clone> Categorical<T, P> {
-    /// Construct a `Categorical` with given categories and probabilities.
-    /// # Panics
-    /// Panics if the vectors have different length.
-    pub fn new(categories: Vec<T>, probabilities: Vec<P>) -> Self {
-        assert_eq!(categories.len(), probabilities.len());
-        Self {
-            categories,
-            probabilities,
-        }
-    }
+pub trait Categorical<T, P>: FromIterator<(T, P)> + IntoIterator<Item = (T, P)>
+where
+    P: NumAssignRef + NumRef + Clone,
+{
+    fn iter<'a>(&'a self) -> impl 'a + Iterator<Item = (&'a T, &'a P)>
+    where
+        T: 'a,
+        P: 'a;
+    fn probabilities_mut<'a>(&'a mut self) -> impl 'a + Iterator<Item = &'a mut P>
+    where
+        P: 'a;
 
     /// Construct a `Categorical` with same probability for each category.
-    pub fn new_uniform(categories: Vec<T>) -> Self {
-        let probabilities = vec![P::one(); categories.len()];
-        let mut ret = Self::new(categories, probabilities);
+    fn new_uniform(it: impl Iterator<Item = T>) -> Self {
+        let mut ret: Self = it.zip(std::iter::repeat_with(P::one)).collect();
         ret.normalize_in_place();
         ret
     }
+
+    /// Returns the probability of some category.
+    fn probability_of(&self, x: &T) -> P;
 
     /// Rescale probabilities such that they sum up to 1.
     ///
     /// This function does not take numerical issues like floating point inaccuracy into consideration.
     /// If the probabilities sum to zero, this may panic or produce other undesirable effects.
     /// A reference to self is returned for convenient chaining.
-    pub fn normalize_in_place(&mut self) -> &mut Self {
-        let reciprocal_total = P::one() / self.probabilities.iter().fold(P::zero(), |a, b| a + b);
-        for p in &mut self.probabilities {
+    fn normalize_in_place(&mut self) -> &mut Self {
+        let reciprocal_total = P::one() / self.iter().fold(P::zero(), |a, b| a + b.1);
+        for p in self.probabilities_mut() {
             *p *= &reciprocal_total;
         }
         self
     }
 
-    /// Iterate pairs of categories and probabilities by reference
-    pub fn iter(&self) -> impl Iterator<Item = (&T, &P)> {
-        self.categories.iter().zip(self.probabilities.iter())
-    }
-
-    /// Combine with a different `Categorical`.
+    /// Combine with a different `Categorical` using a function that combines pairs of categories.
     ///
     /// Output probabilities are computed assuming the two distributions are independent.
-    /// This does not combine equal output from different invocations to `f`.
-    /// If `f` is not injective, this may cause duplicate items.
-    pub fn combine_injective<U, O>(
-        &self,
-        other: &Categorical<U, P>,
-        mut f: impl FnMut(&T, &U) -> O,
-    ) -> Categorical<O, P> {
-        let mut probabilities =
-            Vec::with_capacity(self.probabilities.len() * other.probabilities.len());
-        let mut categories = Vec::with_capacity(probabilities.capacity());
-        for (a, pa) in self.iter() {
-            for (b, pb) in other.iter() {
-                probabilities.push(pa.clone() * pb);
-                categories.push(f(a, b));
-            }
-        }
-        Categorical {
-            probabilities,
-            categories,
-        }
-    }
-
-    /// Returns the probability of x.
-    /// If there are multiple items that compare equal to `x`, the result is unspecified.
-    pub fn probability_of(&self, x: &T) -> P
+    fn combined<T1, C1, T2, C2, F>(c1: &C1, other: &C2, mut f: F) -> Self
     where
-        T: PartialEq,
+        C1: Categorical<T1, P>,
+        C2: Categorical<T2, P>,
+        F: FnMut(&T1, &T2) -> T,
     {
-        let Some(i) = self.categories.iter().position(|y| x == y) else {
-            return P::zero();
-        };
-        self.probabilities[i].clone()
-    }
-
-    /// Like [combine_injective](Self::combine_injective), but combines equal items.
-    pub fn combine_hash<U, O: Hash + Eq>(
-        &self,
-        other: &Categorical<U, P>,
-        mut f: impl FnMut(&T, &U) -> O,
-    ) -> Categorical<O, P> {
-        let mut out = HashMap::new();
-        for (a, pa) in self.iter() {
-            for (b, pb) in other.iter() {
-                match out.entry(f(a, b)) {
-                    hash_map::Entry::Vacant(x) => {
-                        x.insert(pa.clone() * pb);
-                    }
-                    hash_map::Entry::Occupied(mut x) => {
-                        *x.get_mut() += &(pa.clone() * pb);
-                    }
-                }
-            }
-        }
-        out.into_iter().collect()
-    }
-
-    /// Like [combine_injective](Self::combine_injective), but combines equal items.
-    /// If T implements [Hash], you probably should use [combine_hash](Self::combine_hash) instead.
-    pub fn combine_ord<U, O: Ord + Eq>(
-        &self,
-        other: &Categorical<U, P>,
-        mut f: impl FnMut(&T, &U) -> O,
-    ) -> Categorical<O, P> {
-        let mut out = BTreeMap::new();
-        for (a, pa) in self.iter() {
-            for (b, pb) in other.iter() {
-                match out.entry(f(a, b)) {
-                    btree_map::Entry::Vacant(x) => {
-                        x.insert(pa.clone() * pb);
-                    }
-                    btree_map::Entry::Occupied(mut x) => {
-                        *x.get_mut() += &(pa.clone() * pb);
-                    }
-                }
-            }
-        }
-        out.into_iter().collect()
+        c1.iter()
+            .flat_map(move |(t1, p1)| {
+                other
+                    .iter()
+                    .map(move |(t2, p2)| ((t1, t2), p1.clone() * p2))
+            })
+            .map(|((t1, t2), p)| (f(t1, t2), p))
+            .collect()
     }
 }
 
-impl<T, P> FromIterator<(T, P)> for Categorical<T, P> {
-    fn from_iter<IT: IntoIterator<Item = (T, P)>>(iter: IT) -> Self {
-        let (options, probabilities) = iter.into_iter().unzip();
-        Categorical {
-            categories: options,
-            probabilities,
-        }
-    }
-}
-
-impl<T, P> IntoIterator for Categorical<T, P> {
-    type Item = (T, P);
-    type IntoIter =
-        std::iter::Zip<<Vec<T> as IntoIterator>::IntoIter, <Vec<P> as IntoIterator>::IntoIter>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.categories.into_iter().zip(self.probabilities)
-    }
+/// Builds Categorical with a single category: () with probability 1.
+pub fn unit_categorical<C: Categorical<(), P>, P: NumAssignRef + NumRef + Clone>() -> C {
+    std::iter::once(((), P::one())).collect()
 }
